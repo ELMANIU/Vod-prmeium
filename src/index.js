@@ -3,59 +3,172 @@ export default {
 
     const url = new URL(request.url);
 
-    const origen = "http://200.234.234.244";
+    // IP / dominio de tu servidor Nginx
+    const ORIGEN = "http://200.234.234.244";
 
-    // prueba principal
+
+    // ==========================
+    // TEST WORKER
+    // ==========================
     if (url.pathname === "/") {
-      return new Response("Fenix VOD Worker activo", {
-        headers:{
-          "content-type":"text/plain"
+
+      return new Response(
+        "Fenix VOD Worker activo",
+        {
+          headers:{
+            "Content-Type":"text/plain"
+          }
         }
-      });
+      );
+
     }
 
 
-    // Playlist HLS
-    if (url.pathname === "/vod/pelicula1/playlist.m3u8") {
+
+    // ==========================
+    // PLAYLIST HLS
+    // ==========================
+    if (
+      url.pathname === "/vod/pelicula1/playlist.m3u8"
+    ) {
+
 
       const respuesta = await fetch(
-        origen + "/vod/pelicula1/playlist.m3u8"
+        ORIGEN + "/vod/pelicula1/playlist.m3u8"
       );
 
-      let texto = await respuesta.text();
 
-      // Cambiar segmentos para que pasen por Cloudflare
-      texto = texto.replace(
+      let playlist = await respuesta.text();
+
+
+      // Cambiar segmentos para pasar por Worker
+      playlist = playlist.replace(
         /segment_[0-9]+\.ts/g,
-        (match)=>{
-          return "/vod/pelicula1/" + match;
+        (segmento)=>{
+          return "/vod/pelicula1/" + segmento;
         }
       );
 
 
-      return new Response(texto,{
-        headers:{
-          "content-type":"application/vnd.apple.mpegurl",
-          "cache-control":"no-cache"
-        }
-      });
-
-    }
-
-
-    // Segmentos TS
-    if(url.pathname.startsWith("/vod/pelicula1/segment_")){
-
-      return fetch(
-        origen + url.pathname
+      // Cambiar subtítulos si existen
+      playlist = playlist.replace(
+        /playlist0\.vtt/g,
+        "/vod/pelicula1/playlist0.vtt"
       );
 
+
+      return new Response(
+        playlist,
+        {
+          headers:{
+            "Content-Type":
+            "application/vnd.apple.mpegurl",
+
+            "Access-Control-Allow-Origin":"*",
+
+            "Cache-Control":
+            "no-cache, no-store, must-revalidate"
+          }
+        }
+      );
+
+
     }
 
 
-    return new Response("Ruta no encontrada",{
-      status:404
-    });
+
+
+    // ==========================
+    // SEGMENTOS TS + VTT
+    // ==========================
+
+    if (
+      url.pathname.startsWith("/vod/pelicula1/")
+    ) {
+
+
+      const rango =
+      request.headers.get("Range");
+
+
+      const headers = {};
+
+
+      if(rango){
+        headers.Range = rango;
+      }
+
+
+
+      const respuesta = await fetch(
+        ORIGEN + url.pathname,
+        {
+          headers
+        }
+      );
+
+
+
+      return new Response(
+        respuesta.body,
+        {
+
+          status: respuesta.status,
+
+
+          headers:{
+
+            "Content-Type":
+            respuesta.headers.get(
+              "Content-Type"
+            ) || "video/mp2t",
+
+
+            "Content-Length":
+            respuesta.headers.get(
+              "Content-Length"
+            ) || "",
+
+
+            "Content-Range":
+            respuesta.headers.get(
+              "Content-Range"
+            ) || "",
+
+
+            "Accept-Ranges":
+            "bytes",
+
+
+            "Access-Control-Allow-Origin":
+            "*",
+
+
+            "Cache-Control":
+            "no-cache"
+
+          }
+
+        }
+      );
+
+
+    }
+
+
+
+
+    // ==========================
+    // TODO LO DEMÁS
+    // ==========================
+
+    return new Response(
+      "Ruta no encontrada",
+      {
+        status:404
+      }
+    );
+
 
   }
 };
